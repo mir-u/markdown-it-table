@@ -1,6 +1,6 @@
 // Copied from https://github.com/markdown-it/markdown-it/blob/master/lib/rules_block/table.js
 
-const LIST_RE = /^ {0,3}(\d+\.|\*|-)$/;
+const BARE_LIST_RE = /^(\d+\.|\*|-)$/;
 const BLOCKQUOTE_RE = /^(?<space> {0,3})>/;
 
 function isSpace(code) {
@@ -228,6 +228,34 @@ export default function table(state, startLine, endLine, silent) {
         token.attrs = [["style", "text-align:" + aligns[i]]];
       }
 
+      const column = columns[i] || "";
+      const trimmedColumn = column.trim();
+      if (column === "") {
+        token = state.push("paragraph_open", "p", 1);
+        token = state.push("inline", "", 0);
+        token.content = "";
+        token.map = [nextLine, nextLine + 1];
+        token.children = [];
+        token = state.push("paragraph_close", "p", -1);
+
+        token = state.push("td_close", "td", -1);
+        offset = 1;
+        continue;
+      }
+
+      if (BARE_LIST_RE.test(trimmedColumn)) {
+        token = state.push("paragraph_open", "p", 1);
+        token = state.push("inline", "", 0);
+        token.content = column === trimmedColumn ? "" : trimmedColumn;
+        token.map = [nextLine, nextLine + 1];
+        token.children = [];
+        token = state.push("paragraph_close", "p", -1);
+
+        token = state.push("td_close", "td", -1);
+        offset = column.length + 1;
+        continue;
+      }
+
       // https://github.com/markdown-it/markdown-it/blob/e6f19eab4204122e85e4a342e0c1c8486ff40c2d/lib/rules_block/state_block.js#L25
       // bMarks => line begin offsets for fast jumps
       // eMarks => line end offsets for fast jumps
@@ -235,19 +263,19 @@ export default function table(state, startLine, endLine, silent) {
       // sCount => indents for each line (tabs expanded)
 
       let shift = 0, ret;
-      if (ret = BLOCKQUOTE_RE.exec(columns[i])) {
+      if (ret = BLOCKQUOTE_RE.exec(column)) {
         shift = ret.groups.space.length;
-      } else if (ret = LIST_RE.exec(columns[i])) {
-        shift = ret.input.length;
       }
 
       state.bMarks[nextLine] += offset + state.tShift[nextLine] + shift;
       state.tShift[nextLine] = 0;
       state.sCount[nextLine] = 0;
-      offset = (columns[i] || "").length + 1;
+      offset = column.length + 1;
       state.eMarks[nextLine] = state.bMarks[nextLine] + offset - shift - 1;
-      state.lineMax = 1;
+      const savedLineMax = state.lineMax;
+      state.lineMax = nextLine + 1;
       state.md.block.tokenize(state, nextLine, nextLine + 1);
+      state.lineMax = savedLineMax;
 
       token = state.push("td_close", "td", -1);
     }
